@@ -127,18 +127,13 @@ async function runProcess() {
             if (code === 0) {
                 console.log('npm build completed successfully');
                 let pkg = require('./repo/package.json');
-
-                if (!pkg.scripts || !pkg.scripts.start) {
-                    console.error('No start script found in package.json');
-                    return reject(new Error('No start script'));
-                }
                 let entryPoint = pkg.main || 'index.js';
 
-                runningProcess = spawn('node', [`repo/${entryPoint}`], {
+                runningProcess = spawn('node', [`${entryPoint}`], {
                     stdio: 'inherit',
-                    // cwd: path.join(__dirname, 'repo'),
+                    cwd: path.join(__dirname, 'repo'),
                     shell: true,
-                    // env: envVars
+                    env: envVars
                 });
 
                 runningProcess.on('close', resolve);
@@ -152,7 +147,7 @@ async function runProcess() {
 
 async function main() {
     lastCommitSha = await getLatestCommitSha();
-    await runProcess();
+    runProcess();
     setInterval(async () => {
         try {
             console.log("Checking for updates...");
