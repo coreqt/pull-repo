@@ -58,14 +58,19 @@ function fetchFile(url, dest) {
                 'Accept': 'application/vnd.github.v3.raw',
             }
         };
+
+        
         https.get(url, options, (res) => {
+
             if (res.statusCode === 200) {
                 const fileStream = fs.createWriteStream(dest);
                 res.pipe(fileStream);
                 fileStream.on('finish', () => fileStream.close(resolve));
+
             } else {
                 reject(new Error(`Failed to download ${url}: ${res.statusCode}`));
             }
+
         }).on('error', reject);
     });
 }
@@ -121,7 +126,14 @@ async function runProcess() {
         buildProc.on('close', (code) => {
             if (code === 0) {
                 console.log('npm build completed successfully');
-                runningProcess = spawn('npm', ['run', 'start'], {
+                let pkg = require('./repo/package.json');
+                if (!pkg.scripts || !pkg.scripts.start) {
+                    console.error('No start script found in package.json');
+                    return reject(new Error('No start script'));
+                }
+                let entryPoint = pkg.main || 'index.js';
+
+                runningProcess = spawn('node', [entryPoint], {
                     stdio: 'inherit',
                     cwd: path.join(__dirname, 'repo'),
                     shell: true,
