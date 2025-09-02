@@ -1,17 +1,18 @@
 // This script downloads all files from a private GitHub repository using the API
 // Ensure that the GITHUB_TOKEN environment variable is set before running
+require('dotenv').config();
 
 const { spawn } = require('child_process');
 
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+const envVars = require('./env.json');
 
-const OWNER = 'lux-jsx';
-const REPO = 'kiwi';
-const BRANCH = 'main'; // Change if needed
+const OWNER = process.env.OWNER;
+const REPO = process.env.REPO;
+const BRANCH = process.env.BRANCH || 'main'; // Change if needed
 const TOKEN = process.env.GITHUB_TOKEN;
 
 if (!TOKEN) {
@@ -76,9 +77,13 @@ async function downloadRepo() {
         const treeData = await fetchJson(githubApi(treeUrl));
         const files = treeData.tree.filter(item => item.type === 'blob');
 
+        // check if the files in the folder exist. if yes delete all it contains
+        const repoPath = path.join(__dirname, 'repo');
+        fs.rmSync(repoPath, { recursive: true, force: true });
+
         for (const file of files) {
             const rawUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${file.path}?ref=${BRANCH}`;
-            const localPath = path.join(__dirname, file.path);
+            const localPath = path.join(__dirname, 'repo', file.path);
             fs.mkdirSync(path.dirname(localPath), { recursive: true });
             console.log(`Downloading ${file.path}...`);
             await fetchFile(rawUrl, localPath);
@@ -91,22 +96,62 @@ async function downloadRepo() {
 
 
 
-async function main() {
+let runningProcess = null;
+let lastCommitSha = null;
+const CHECK_INTERVAL = 60 * 1000; // Check every minute
+  
+function getLatestCommitSha() {
+    return fetchJson(githubApi(`/repos/${OWNER}/${REPO}/commits/${BRANCH}`)).then(data => data.sha);
+}
+
+function killProcess(proc) {
+    if (proc && !proc.killed) {
+        proc.kill('SIGTERM');
+    }
+}
+
+async function runProcess() {
     await downloadRepo();
+    return new Promise((resolve, reject) => {
+        const buildProc = spawn('npm', ['run', 'build'], {
+            cwd: path.join(__dirname, 'repo'),
+            stdio: 'inherit',
+            shell: true
+        });
+        buildProc.on('close', (code) => {
+            if (code === 0) {
+                console.log('npm build completed successfully');
+                runningProcess = spawn('npm', ['run', 'start'], {
+                    stdio: 'inherit',
+                    cwd: path.join(__dirname, 'repo'),
+                    shell: true,
+                    env: envVars
+                });
+                runningProcess.on('close', resolve);
+            } else {
+                console.error(`npm build failed with exit code ${code}`);
+                reject(new Error('Build failed'));
+            }
+        });
+    });
+}
 
-    spawn('npm', ['install'], {
-        stdio: 'inherit', // Inherit stdio to see npm output in console
-        shell: true // Use shell to handle npm command properly
-    }).on('close', (code) => {
-        if (code === 0) {
-            console.log('npm install completed successfully');
-            spawn('node', ['index.js'], { stdio: 'inherit' });
-        } else {
-            console.error(`npm install failed with exit code ${code}`);
+async function main() {
+    lastCommitSha = await getLatestCommitSha();
+    await runProcess();
+    setInterval(async () => {
+        try {
+            const latestSha = await getLatestCommitSha();
+            if (latestSha !== lastCommitSha) {
+                console.log('Remote repo updated. Restarting...');
+                killProcess(runningProcess);
+                lastCommitSha = latestSha;
+                await runProcess();
+            }
+        } catch (err) {
+            console.error('Error checking for updates:', err.message);
         }
-
-    })
-
+    }, CHECK_INTERVAL);
 }
 
 main();
