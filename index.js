@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // Ignore SSL Certificate Errors
+
 // This script downloads all files from a private GitHub repository using the API
 // Ensure that the GITHUB_TOKEN environment variable is set before running
 require('dotenv').config();
@@ -110,8 +112,25 @@ function getLatestCommitSha() {
 }
 
 function killProcess(proc) {
-    if (proc && !proc.killed) {
-        proc.kill('SIGTERM');
+    if (!proc || proc.killed) return;
+
+    if (process.platform === 'win32') {
+        const { exec } = require('child_process');
+        exec(`taskkill /PID ${proc.pid} /T /F`, (err) => {
+            if (err) {
+                console.error('Failed to kill process on Windows:', err.message);
+            }
+        });
+    } else {
+        try {
+            process.kill(-proc.pid, 'SIGTERM');
+        } catch (e) {
+            try {
+                proc.kill('SIGTERM');
+            } catch (err) {
+                console.error('Failed to kill process:', err.message);
+            }
+        }
     }
 }
 
@@ -133,7 +152,9 @@ async function runProcess() {
                     stdio: 'inherit',
                     cwd: path.join(__dirname, 'repo'),
                     shell: true,
-                    env: envVars
+                    env: envVars,
+                    detached: true
+
                 });
 
                 runningProcess.on('close', resolve);
@@ -143,20 +164,19 @@ async function runProcess() {
             }
         });
     });
-}
+};
 
 async function main() {
     lastCommitSha = await getLatestCommitSha();
     runProcess();
     setInterval(async () => {
         try {
-            console.log("Checking for updates...");
             const latestSha = await getLatestCommitSha();
             if (latestSha !== lastCommitSha) {
                 console.log('Found an Update. Restarting...');
                 killProcess(runningProcess);
                 lastCommitSha = latestSha;
-                await runProcess();
+                runProcess();
             }
         } catch (err) {
             console.error('Error checking for updates:', err.message);
