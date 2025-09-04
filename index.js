@@ -86,7 +86,13 @@ async function downloadRepo() {
 
         // check if the files in the folder exist. if yes delete all it contains
         const repoPath = path.join(__dirname, 'repo');
-        fs.rmSync(repoPath, { recursive: true, force: true });
+        let dirContains = fs.readdirSync(repoPath);
+
+        dirContains.forEach((item) =>{
+            if(item != '_DONT_DELETE'){
+                fs.rmSync(path.join(repoPath, item), {recursive: true});
+            }
+        })
 
         for (const file of files) {
             const rawUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${file.path}?ref=${BRANCH}`;
