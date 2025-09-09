@@ -151,7 +151,7 @@ async function runProcess() {
         buildProc.on('close', (code) => {
             if (code === 0) {
                 console.log('npm build completed successfully');
-                let pkg = require('./repo/package.json');
+                const pkg = require('./repo/package.json');
                 let entryPoint = pkg.main || 'index.js';
 
                 runningProcess = spawn('node', [`${entryPoint}`], {
@@ -159,7 +159,6 @@ async function runProcess() {
                     cwd: path.join(__dirname, 'repo'),
                     shell: true,
                     env: envVars,
-                    detached: true
 
                 });
 
